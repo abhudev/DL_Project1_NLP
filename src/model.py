@@ -6,37 +6,43 @@
 # The code has been adapted from the [official tutorial on using eager for LM](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/contrib/eager/python/examples/rnn_ptb/rnn_ptb.py)
 # 
 
-
-
-
 import tensorflow as tf
 import tensorflow.contrib.eager as tfe
+import numpy as np
 from tensorflow.python.ops import lookup_ops
 from collections import OrderedDict
 import argparse
 import data_feed
+from tensorflow.python.layers.core import Dense
+
+tf.enable_eager_execution()
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--nli_data', type=str, default='../PROJECT_data/NLI/allnli.train.txt.clean.noblank')
+parser.add_argument('--nli_premise', type=str, default='../PROJECT_data/NLI/allnli_premise.txt')
+parser.add_argument('--nli_hypothesis', type=str, default='../PROJECT_data/NLI/allnli_hypothesis.txt')
+parser.add_argument('--nli_class', type=str, default = '../PROJECT_data/NLI/allnli_class.txt')
 parser.add_argument('--nmt_en', type=str, default='../PROJECT_data/NMT/nmt.de-en.en.tok')
 parser.add_argument('--nmt_de', type=str, default='../PROJECT_data/NMT/nmt.de-en.de.tok')
 parser.add_argument('--parse_data', type=str)
 parser.add_argument('--en_vocab_file',type=str, default='../PROJECT_data/en_vocab.txt')
 parser.add_argument('--de_vocab_file',type=str, default='../PROJECT_data/de_vocab.txt')
+parser.add_argument('--nli_class_vocab', type=str, default='../PROJECT_data/NLI/nli_class_vocab.txt')
 parser.add_argument('--rnn_cell', type=str, default='gru')
+parser.add_argument('--hidden_dim', type=int, default=512)
+parser.add_argument('--embed_dim', type=int, default=256)
+parser.add_argument('--dropout', type=float, default=0.3)
+parser.add_argument('--lr', type=float, default=0.002)
+parser.add_argument('--bsize', type=int, default=32)
+parser.add_argument('--num_epochs', type=int, default=300)
+# parser.add_argument('--')
 # parser.add_argument('--vocab_size', type=str, default=30000)
 args = parser.parse_args()
 
-tf.enable_eager_execution()
+
 tf.set_random_seed(42)
 
-# Parameters of model
-embed_size = 256
-hidden_size = 512
-dropout_prob = 0.3
-adam_lr = 0.002
-batch_size = 32
-vocab_size = 30000 # vocab_table.size()
+#--------------------BEGIN DEFINITIONS--------------------#
 
 # Embedding model
 class Embedding(tf.keras.Model):
@@ -47,65 +53,112 @@ class Embedding(tf.keras.Model):
     def call(self, word_indexes):
         return tf.nn.embedding_lookup(self.W, word_indexes)
 
-class StaticRNN(tf.keras.Model):
-    def __init__(self, h, cell):
-        super(StaticRNN, self).__init__()
-        if cell == 'lstm':
-            self.cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=h)
-        elif cell == 'gru':
-            self.cell = tf.nn.rnn_cell.GRUCell(num_units=h)
-        elif cell == 'vanilla':
-            self.cell = tf.nn.rnn_cell.BasicRNNCell(num_units=h)
-        else:
-            assert(False)
-        
-        
-    def call(self, word_vectors, num_words):
-        word_vectors_time = tf.unstack(word_vectors, axis=1)
-        outputs, final_state = tf.nn.static_rnn(cell=self.cell, inputs=word_vectors_time, sequence_length=num_words, dtype=tf.float32)
-        return outputs
+# Different kinds of RNN cells to be used
+dict_fast_rnn_cells = {'GPU': 
+                        {'gru': tf.contrib.cudnn_rnn.CudnnGRU, 
+                         'lstm': tf.contrib.cudnn_rnn.CudnnLSTM, 
+                         'vanilla':  tf.contrib.cudnn_rnn.CudnnRNNTanh}, 
 
+                  'CPU': 
+                        {'gru': tf.contrib.rnn.GRUBlockCellV2, 
+                         'lstm': tf.contrib.rnn.LSTMBlockCell, 
+                         'vanilla': tf.nn.rnn_cell.BasicRNNCell}
+                 }
+
+dict_rnn_cells = {
+                    'gru': tf.nn.rnn_cell.GRUCell,
+                    'lstm': tf.nn.rnn_cell.LSTMCell,
+                    'vanilla': tf.nn.rnn_cell.BasicRNNCell
+                 }
+
+# Shared encoder class
 class SharedEncoder(tf.keras.Model):
     def __init__(self, V, word_dim, hidden_size, cell_type):
         super(SharedEncoder, self).__init__()
         self.word_embedding = Embedding(V, word_dim)
-        self.cell_type = cell_type
-        if(self.cell_type == 'gru'):
-            self.encoder = tf.nn.rnn_cell.GRUCell(num_units=hidden_size)
-        elif(self.cell_type = 'lstm'):
-            self.encoder = tf.nn.rnn_cell.LSTMCell(num_units=hidden_size)
-        elif(self.cell_type == 'vanilla'):
-            self.encoder = tf.nn.rnn_cell.BasicRNNCell(num_units=hidden_size)
-        else:
+        self.cell_type = cell_type        
+        try:
+            self.encoder = dict_rnn_cells[self.cell_type](num_units=hidden_size)
+        except:
             assert(False)
         
-    def call(self, word_vectors, num_words):
+    # Input - datum[0], datum[1] or datum[2], datum[3]
+    def call(self, word_indices, num_words):
+        word_vectors = self.word_embedding(word_indices)
         word_vectors_time = tf.unstack(word_vectors, axis=1)
-        _, final_state = tf.nn.static_rnn(cell=self.encoder_cell, inputs=word_vectors_time, sequence_length=num_words, dtype=tf.float32)
+        _, final_state = tf.nn.static_rnn(cell=self.encoder, inputs=word_vectors_time, sequence_length=num_words, dtype=tf.float32)
         return final_state
 
+END_SYMBOL = '<eos>'
+GO_SYMBOL = '<sos>'
+
+# NMT decoder class, may like to generalize to general decoder, with different vocab etc
 class NMTDecoder(tf.keras.Model):
-    def __init__(self, V, word_dim, hidden_size, cell_type):
+    def __init__(self, V, word_dim, hidden_size, cell_type, time_major=True):
         super(NMTDecoder, self).__init__()
         self.word_embedding = Embedding(V, word_dim)
         self.cell_type = cell_type
-        if(self.cell_type == 'gru'):
-            self.rnn_cell = tf.nn.rnn_cell.GRUCell(num_units=hidden_size)
-        elif(self.cell_type = 'lstm'):
-            self.rnn_cell = tf.nn.rnn_cell.LSTMCell(num_units=hidden_size)
-        elif(self.cell_type == 'vanilla'):
-            self.rnn_cell = tf.nn.rnn_cell.BasicRNNCell(num_units=hidden_size)
-        else:
+        try:
+            self.decoder = dict_rnn_cells[self.cell_type](num_units=hidden_size)
+        except:
             assert(False)
-        self.decoder = tf.contrib.seq2seq.BeamSearchDecoder(self.rnn_cell, self.word_embedding, <start_tokens>, '<eos>', <initial_state>, <beam_width>, <output_layer>, )
-    
-    def call(word_vectors, num_words):
-        pass
-        # Can initialize
+        # self.decoder = tf.contrib.seq2seq.BeamSearchDecoder(self.rnn_cell, self.word_embedding, <start_tokens>, '<eos>', <initial_state>, <beam_width>, <output_layer>, )
+        # self.output_layer = Dense(units=V)
+        self.output_layer = tf.keras.layers.Dense(units=V)
+        # TODO - now, SOS will be held fixed for all practical purposes. Do we want this?
+        # self.start_tok = tf.fill([args.bsize], 3)
+        self.start_tok = tf.convert_to_tensor(np.full((args.size, 1), 3))
+        self.time_major = time_major
 
-# An MLP for NLI
-class Nli_MLP(tf.keras.Model):
+    # start_tok will be the sos sequences
+    def call(self, encoder_state, mode, datum, max_iter):        
+
+        if(mode == 'train'):
+            # datum should be passed in train phase
+            # It should be tuple of tuples, first is indices, second is lengths
+            decoder_emb_inp = self.word_embedding(datum[0]); decoder_lengths = datum[1]
+            helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, decoder_lengths, time_major=True)
+            # Decoder
+            decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder, helper, encoder_state, output_layer=self.output_layer)
+            # Dynamic decoding
+            outputs, _ = tf.contrib.seq2seq.dynamic_decode(decoder, output_time_major=self.time_major)
+            logits = outputs.rnn_output
+            return logits
+
+        elif(mode == 'eval'):
+            # Helper
+            # eos is 2, sos is 3 - HARD CODING! TODO - change it
+            helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.word_embedding.W, self.start_tok, 2)
+            # Decoder
+            decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder, helper, encoder_state, output_layer=self.output_layer)
+            # Dynamic decoding
+            outputs, _ = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=max_iter)
+            translations = outputs.sample_id
+            return translations
+
+
+        # Need a start of sequence token!
+        state = encoder_state
+        out = self.start_tok
+        outputs_time = []
+
+        # Keep accumulating the loss!!!
+        for i in range(max_iter):
+            out, state = self.decoder(out, state)
+            logits = self.output_layer(out)
+            logits = tf.nn.softmax(logits), state
+            pred_word = tf.argmax(logits, 1).numpy()
+
+            outputs_time.append(out)
+
+        outputs = tf.stack(outputs_time, axis=1)
+        logits = self.output_layer(outputs)
+        return logits
+
+# MLP for NLI class
+class NLIDecoder(tf.keras.Model):
     def __init__(self, drop_p, hidden_dim, num_classes=3):
+        super(NLIDecoder, self).__init__()
         self.drop_p = drop_p
         self.layer_size = hidden_dim*4 # Concatenate four vectors
         self.num_classes = num_classes
@@ -113,58 +166,81 @@ class Nli_MLP(tf.keras.Model):
         # TODO - add seed?
         self.dropout = tf.keras.layers.Dropout(drop_p)
         self.mlp_in = tf.keras.layers.Dense(units=self.layer_size, activation='relu', kernel_initializer='random_normal', bias_initializer='uniform')
-        self.mlp_out = tf.keras.layers.Dense(units=self.num_classes, kernel_initializer='random_normal')
-        self.classes_out = tf.keras.Softmax()
-    def call(self, input):
-        l1_drop = self.dropout(input)
+        self.mlp_out = tf.keras.layers.Dense(units=self.num_classes, kernel_initializer='random_normal')        
+    def call(self, in_vector):
+        l1_drop = self.dropout(in_vector)
         l1 = self.mlp_in(l1_drop)
-        l2 = self.mlp_out(l1)
-        output = self.classes_out(l2)
-        return classes_out
-
-
-class MultiModel(tf.keras.Model):
-    def __init__(self, V, word_dim, hidden_size):
-        super(MultiModel, self).))__init__()
-        self.encoder = SharedEncoder(V, word_dim, hidden_size)
-        self.mtDecoder = NMTDecoder(V, word_dim, hidden_size)
-        self.parseDecoder = ParseDecoder(V, word_dim, hidden_size)
-    
-    # Take care - which task?
-    # Parameters:
-    # datum - sentence input
-    # num_words - input of number of words in each sentence
-    # datunm2 - second optional sentence for NLI
-    # num_word2 - NLI
-    def call(datum, num_words, task):
-        if(task == 'nmt'):
-            pass
-        elif task == 'parse':
-            pass
-        elif task == 'nli':
-            pass
-        else:
-            assert(False)
-        
-        
-
-class LanguageModel(tf.keras.Model):
-    def __init__(self, V, d, h, cell):
-        super(LanguageModel, self).__init__()
-        self.word_embedding = Embedding(V, d)
-        self.rnn = StaticRNN(h, cell)
-        self.output_layer = tf.keras.layers.Dense(units=V)
-        
-    def call(self, datum):
-        word_vectors = self.word_embedding(datum[0])
-        rnn_outputs_time = self.rnn(word_vectors, datum[2])
-        
-        #We want to convert it back to shape batch_size x TimeSteps x h
-        rnn_outputs = tf.stack(rnn_outputs_time, axis=1)
-        logits = self.output_layer(rnn_outputs)
+        logits = self.mlp_out(l1)    
         return logits
 
+#--------------------END DEFINITIONS--------------------#
 
+# Vocabularies
 en_vocab_table = lookup_ops.index_table_from_file(args.en_vocab_file)
 de_vocab_table = lookup_ops.index_table_from_file(args.de_vocab_file)
+
+en_vocab_size = en_vocab_table.size(); de_vocab_size = de_vocab_table.size()
+
+
+# Encoders and decoders
+multi_encoder = SharedEncoder(en_vocab_size, args.embed_dim, args.hidden_dim, args.rnn_cell)
+nmt_decoder = NMTDecoder(en_vocab_size, args.embed_dim, args.hidden_dim, args.rnn_cell)
+nli_decoder = NLIDecoder(args.dropout, args.hidden_dim)
+
+nli_batch = data_feed.get_nli_data(args.nli_premise, args.nli_hypothesis, args.nli_class, args.en_vocab_file, args.nli_class_vocab, args.bsize)
+
+# nmt_batch = data_feed.get_nmt_data(en_d_small, de_d_small, en_v, de_v, bsize)
+# nmt_batch = get_nmt_data(en_d_small, de_d_small, en_v, de_v, bsize)
+
+def loss_nli(encoder, decoder_nli, datum):
+    u = encoder(datum[0], datum[1])
+    v = encoder(datum[2], datum[3])
+    pass_in = tf.concat((u, v, u-v, u*v), axis=1)
+    logits = decoder_nli(pass_in)
+    loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=datum[4])
+    return tf.reduce_sum(loss)/ tf.cast(args.bsize,dtype=tf.float32)
+
+def loss_nmt(encoder, decoder_nmt, data):
+    encoder_state = encoder(data[0][0], data[0][1])
+    # def call(self, encoder_state, mode, datum=None):
+    logits = decoder_nmt(encoder_state, 'train', data[0], 300)
+    mask = tf.sequence_mask(data[1][1], dtype=tf.float32)
+    loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=data[1][0]) * mask
+    return tf.reduce_sum(loss) / tf.cast(tf.reduce_sum(data[1][0]), dtype=tf.float32)
+    # decoder_outputs = datum[1][0]
+    # crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=decoder_outputs, logits=logits)
+    # mask = tf.sequence_mask(datum[1][1], dtype=tf.float32)
+    # train_loss = (tf.reduce_sum(crossent * mask) / args.bsize)
+
+nli_loss_grads = tfe.implicit_value_and_gradients(loss_nli)
+nmt_loss_grads = tfe.implicit_value_and_gradients(loss_nmt)
+
+opt = tf.train.AdamOptimizer(learning_rate=args.lr)
+
+
+STATS_STEPS = 5
+
+for epoch_num in range(args.num_epochs):
+    batch_loss = []
+    for step_num, datum in enumerate(nli_batch, start=1):
+        loss_value, gradients = nli_loss_grads(multi_encoder, nli_decoder, datum)
+        batch_loss.append(loss_value)
+        
+        if step_num % STATS_STEPS == 0:
+            print(f'Epoch: {epoch_num} Step: {step_num} Avg Loss: {np.average(np.asarray(loss_value))}')
+            batch_loss = []
+        opt.apply_gradients(gradients, global_step=tf.train.get_or_create_global_step())
+    print(f'Epoch{epoch_num} Done!')
+
+for epoch_num in range(args.num_epochs):
+    batch_loss = []
+    for step_num, datum in enumerate(nmt_batch, start=1):
+        loss_value, gradients = nmt_loss_grads(multi_encoder, nmt_decoder, datum)
+        batch_loss.append(loss_value)
+        
+        if step_num % STATS_STEPS == 0:
+            print(f'Epoch: {epoch_num} Step: {step_num} Avg Loss: {np.average(np.asarray(loss_value))}')
+            batch_loss = []
+        opt.apply_gradients(gradients, global_step=tf.train.get_or_create_global_step())
+    print(f'Epoch{epoch_num} Done!')
 

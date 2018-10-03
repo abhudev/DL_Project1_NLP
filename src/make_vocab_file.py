@@ -94,13 +94,13 @@ print(de_word_counts[:10])
 # Discard words which have count less than min freq
 # Assign index 0 to `<unk>`
 # Make it different. Make unk - 1, eos - 2. 0 - reserved for pad
-def build_vocab(word_counts, size):
+def build_vocab(word_counts, size, lang):
     vocab = OrderedDict()
     vocab['<pad>'] = 0
     vocab['<unk>'] = 1
     vocab['<eos>'] = 2
-    # num_words = 0
-    a = 0
+    if(lang == 'de'):
+        vocab['<sos>'] = 3
     for word, freq in word_counts:        
         cur_size = len(vocab)
         vocab[word] = cur_size + 1
@@ -111,8 +111,8 @@ def build_vocab(word_counts, size):
 
 
 
-en_vocab = build_vocab(en_word_counts, args.vocab_size)
-de_vocab = build_vocab(de_word_counts, args.vocab_size)
+en_vocab = build_vocab(en_word_counts, args.vocab_size, 'en')
+de_vocab = build_vocab(de_word_counts, args.vocab_size, 'de')
 print(f'V[<unk>]: {en_vocab["<unk>"]} V["learning"]: {en_vocab["learning"]}')
 print(f'V2[<unk>]: {de_vocab["<unk>"]} V2["learning"]: {de_vocab["ist"]}')
 

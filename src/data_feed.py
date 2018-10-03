@@ -1,4 +1,5 @@
 import tensorflow as tf
+import tensorflow.contrib.eager as tfe
 from tensorflow.python.ops import lookup_ops
 import argparse
 import time
@@ -31,9 +32,10 @@ def get_nmt_data(en_data, de_data, en_vocab, de_vocab, bsize, unk='<unk>',eos='<
     # de_dataset_iter = iter(de_dataset)
     # Use this to zip the two datasets with line-by-line translations
     en_de_dataset = tf.data.Dataset.zip((en_dataset, de_dataset))
-    # en_de_batch = en_de_dataset.padded_batch(batch_size=bsize, padded_shapes=(([None], []), ([None], [])))
+    en_de_batch = en_de_dataset.padded_batch(batch_size=bsize, padded_shapes=(([None], []), ([None], [])))
     # return iter(en_de_batch)
-    return en_de_dataset
+    return (en_de_batch)
+    # return en_de_dataset
 
 #   
 # bat = get_nmt_data(en_d, de_d, en_v, de_v, bsize)
@@ -57,11 +59,14 @@ def get_nli_data(nli_premise, nli_hypothesis, nli_classes, en_vocab, class_vocab
     nli_classes = nli_classes.map(lambda sentence: class_vocab_table.lookup(tf.string_split([sentence]).values)[0])
     nli_dataset = tf.data.Dataset.zip((nli_premise, nli_premise_wrds, nli_hypothesis, nli_hypothesis_wrds, nli_classes))
     # nli_dataset = nli_dataset.map(lambda tup: tup[0])
-    # nli_batch = nli_dataset.padded_batch(batch_size=bsize, padded_shapes=( (([None]),([]),([None]),([]),([])) ) )
+    nli_batch = nli_dataset.padded_batch(batch_size=bsize, padded_shapes=( (([None]),([]),([None]),([]),([])) ) )
     # return iter(nli_batch)
-    return nli_dataset
+    return(nli_batch)
+    # return nli_dataset
 
 # bat = get_nli_data(nli_p, nli_h, nli_c, en_v, c_v, bsize)
+# bat = get_nli_data(nli_p_small, nli_h_small, nli_c_small, en_v, c_v, bsize)
+# nli_batch = data_feed.get_nli_data(nli_p_small, nli_h_small, nli_c_small, args.en_vocab_file, args.nli_class_vocab, args.bsize)
 
 def get_parse_data():
-    
+    pass

@@ -1,0 +1,20 @@
+en_d = "../PROJECT_data/NMT/nmt.de-en.en.tok"
+de_d = "../PROJECT_data/NMT/nmt.de-en.de.tok"
+en_v = "../PROJECT_data/en_vocab.txt"
+de_v = "../PROJECT_data/de_vocab.txt"
+bsize = 32
+nli_p = "../PROJECT_data/NLI/allnli_premise.txt"
+nli_h = "../PROJECT_data/NLI/allnli_hypothesis.txt"
+nli_c = "../PROJECT_data/NLI/allnli_class.txt"
+en_v = "../PROJECT_data/en_vocab.txt"
+c_v = "../PROJECT_data/NLI/nli_class_vocab.txt"
+nli_p_small = "../PROJECT_data/NLI/overfit_sample/allnli_premise_small.txt"
+nli_h_small = "../PROJECT_data/NLI/overfit_sample/allnli_hypothesis_small.txt"
+nli_c_small = "../PROJECT_data/NLI/overfit_sample/allnli_class_small.txt"
+
+nli_p_smaller = "../PROJECT_data/NLI/overfit_sample/allnli_premise_smaller.txt"
+nli_h_smaller = "../PROJECT_data/NLI/overfit_sample/allnli_hypothesis_smaller.txt"
+nli_c_smaller = "../PROJECT_data/NLI/overfit_sample/allnli_class_smaller.txt"
+
+en_d_small = "../PROJECT_data/NMT/en_small"
+de_d_small = "../PROJECT_data/NMT/de_small"
