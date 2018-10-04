@@ -10,7 +10,7 @@ tf.enable_eager_execution()
 
 
 # Return iterable to produce batches for NMT data
-def get_nmt_data(en_data, de_data, en_vocab, de_vocab, bsize, unk='<unk>',eos='<eos>'):
+def get_nmt_data(en_data, de_data, en_vocab, de_vocab, bsize, unk='<unk>',eos='<eos>', sos='<sos>'):
     en_dataset = tf.data.TextLineDataset(en_data)
     de_dataset = tf.data.TextLineDataset(de_data)
 
@@ -26,13 +26,16 @@ def get_nmt_data(en_data, de_data, en_vocab, de_vocab, bsize, unk='<unk>',eos='<
     en_dataset = en_dataset.map(lambda words: (words, tf.size(words)))
     # en_dataset_iter = iter(en_dataset)
     de_dataset = de_dataset.map(lambda sentence: tf.string_split([sentence]).values)
+    de_dataset_sos = de_dataset.map(lambda words: tf.concat([[sos], words], axis=0) )
     de_dataset = de_dataset.map(lambda words: tf.concat([words, [eos]], axis=0) )
     de_dataset = de_dataset.map(lambda words: de_vocab_table.lookup(words))
+    de_dataset_sos = de_dataset_sos.map(lambda words: de_vocab_table.lookup(words))
     de_dataset = de_dataset.map(lambda words: (words, tf.size(words)))
+    de_dataset_sos = de_dataset_sos.map(lambda words: (words, tf.size(words)))
     # de_dataset_iter = iter(de_dataset)
     # Use this to zip the two datasets with line-by-line translations
-    en_de_dataset = tf.data.Dataset.zip((en_dataset, de_dataset))
-    en_de_batch = en_de_dataset.padded_batch(batch_size=bsize, padded_shapes=(([None], []), ([None], [])))
+    en_de_dataset = tf.data.Dataset.zip((en_dataset, de_dataset_sos, de_dataset))
+    en_de_batch = en_de_dataset.padded_batch(batch_size=bsize, padded_shapes=(([None], []), ([None], []), ([None], [])))
     # return iter(en_de_batch)
     return (en_de_batch)
     # return en_de_dataset
