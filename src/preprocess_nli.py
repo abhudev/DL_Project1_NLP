@@ -7,7 +7,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--nli_file', type=str, default='../PROJECT_data/NLI/allnli.train.txt.clean.noblank')
 parser.add_argument('--out_premise', type=str, default='../PROJECT_data/NLI/allnli_premise.txt')
 parser.add_argument('--out_hypothesis', type=str, default='../PROJECT_data/NLI/allnli_hypothesis.txt')
-parser.add_argument('--out_classes', type=str, default='../PROJECT_data/NLI/allnli_class.txt')
+parser.add_argument('--out_classes', type=str, default='../PROJECT_data/NLI/allnli_train_classes.txt')
 args = parser.parse_args()
 
 start = time.time()

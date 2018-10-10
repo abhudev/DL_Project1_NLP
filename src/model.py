@@ -113,34 +113,36 @@ class NMTDecoder(tf.keras.Model):
     # start_tok will be the sos sequences
     def call(self, encoder_state, mode, datum, max_iter):        
 
-        if(mode == 'train'):
-            # datum should be passed in train phase
-            # It should be tuple of tuples, first is indices, second is lengths
-            decoder_emb_inp = self.word_embedding(datum[0]); decoder_lengths = datum[1]
-            helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, decoder_lengths, time_major=True)
-            # Decoder
-            decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder, helper, encoder_state, output_layer=self.output_layer)
-            # Dynamic decoding
-            outputs, _ = tf.contrib.seq2seq.dynamic_decode(decoder, output_time_major=self.time_major)
-            logits = outputs.rnn_output
-            return logits
+        # if(mode == 'train'):
+        #     # datum should be passed in train phase
+        #     # It should be tuple of tuples, first is indices, second is lengths
+        #     decoder_emb_inp = self.word_embedding(datum[0]); decoder_lengths = datum[1]
+        #     helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, decoder_lengths, time_major=True)
+        #     # Decoder
+        #     decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder, helper, encoder_state, output_layer=self.output_layer)
+        #     # Dynamic decoding
+        #     outputs, _ = tf.contrib.seq2seq.dynamic_decode(decoder, output_time_major=self.time_major)
+        #     logits = outputs.rnn_output
+        #     return logits
 
-        elif(mode == 'eval'):
-            # Helper
-            # eos is 2, sos is 3 - HARD CODING! TODO - change it
-            helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.word_embedding.W, self.start_tok, 2)
-            # Decoder
-            decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder, helper, encoder_state, output_layer=self.output_layer)
-            # Dynamic decoding
-            outputs, _ = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=max_iter)
-            translations = outputs.sample_id
-            return translations
+        # elif(mode == 'eval'):
+        #     # Helper
+        #     # eos is 2, sos is 3 - HARD CODING! TODO - change it
+        #     helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.word_embedding.W, self.start_tok, 2)
+        #     # Decoder
+        #     decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder, helper, encoder_state, output_layer=self.output_layer)
+        #     # Dynamic decoding
+        #     outputs, _ = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=max_iter)
+        #     translations = outputs.sample_id
+        #     return translations
 
 
         # Need a start of sequence token!
         state = encoder_state
-        out = self.start_tok
-        outputs_time = []
+        out = self.word_embedding(self.start_tok)
+        # outputs_time = []
+
+        words_predicted = []; words_logits = []
 
         # Keep accumulating the loss!!!
         for i in range(max_iter):
@@ -148,12 +150,17 @@ class NMTDecoder(tf.keras.Model):
             logits = self.output_layer(out)
             logits = tf.nn.softmax(logits), state
             pred_word = tf.argmax(logits, 1).numpy()
+            out = self.word_embedding(pred_word)
+            words_predicted.append(pred_word)
+            words_logits.append(logits)
+            # outputs_time.append(out)
 
-            outputs_time.append(out)
-
-        outputs = tf.stack(outputs_time, axis=1)
-        logits = self.output_layer(outputs)
-        return logits
+        words_logits = tf.stack(words_logits, axis=1)
+        words_predicted = tf.stack(words_predicted, axis=1)
+        return words_predicted, words_logits
+        # outputs = tf.stack(outputs_time, axis=1)
+        # logits = self.output_layer(outputs)
+        # return logits
 
 # MLP for NLI class
 class NLIDecoder(tf.keras.Model):
