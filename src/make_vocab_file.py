@@ -11,8 +11,8 @@ import sys
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--nli_data', type=str, default='../PROJECT_data/NLI/allnli_train.txt')
-parser.add_argument('--parse_data', type=str, default='../PROJECT_data/Parsing/Berkely/train_head.txt')
-parser.add_argument('--linearized', type=str, default='../PROJECT_data/Parsing/Berkely/linearized_parse.txt')
+parser.add_argument('--parse_data', type=str, default='../PROJECT_data/Parsing/Berkely/trunc_train_lower_fixed.txt')
+parser.add_argument('--linearized', type=str, default='../PROJECT_data/Parsing/Berkely/parse_train_lin2_fixed.txt')
 parser.add_argument('--nmt_en', type=str, default='../PROJECT_data/NMT/en_train_nmt.txt')
 parser.add_argument('--nmt_de', type=str, default='../PROJECT_data/NMT/de_train_nmt.txt')
 parser.add_argument('--en_vocab_file',type=str, default='../PROJECT_data/en_vocab.txt')

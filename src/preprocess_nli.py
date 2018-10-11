@@ -1,3 +1,7 @@
+# Separate the hypothesis, premise and classes
+# into three different files for the NLI dataset.
+# The sentences and classes in each line are tab-separated.
+
 import argparse
 import os
 import sys
@@ -23,10 +27,7 @@ with open(args.nli_file, encoding="utf-8") as fin, open(args.out_premise, "w", e
         s2 = line.find("\t")
         line_hypothesis = line[:s2]
         line_class = line.split()[-1]
-        
-        # list_pos = [" ."+x if (x == "\t" and line[i-1]!=".") else x for i, x in enumerate(line)]
-        # new_line = "".join(list_pos)
-        
+                
         foutp.write(line_premise+"\n")
         fouth.write(line_hypothesis+"\n")
         foutc.write(line_class+"\n")
