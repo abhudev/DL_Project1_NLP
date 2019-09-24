@@ -1,4 +1,3 @@
 # Deep Learning Project 1 - Natural Language Processing
 
-* Pay attention to optimization details
-* Leave time to do bonus part as well
+Implementation of paper "Learning General Purpose Distributed Sentence Representations via Large Scale Multi-task Learning"
